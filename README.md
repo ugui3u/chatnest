@@ -88,25 +88,6 @@ http://127.0.0.1:8787/
 
 记忆检索默认读取用户自己创建的 `CLAUDE.md`、`profile.json` 和 `memories/`，并在本地生成 ChromaDB 索引。公开仓库不包含任何真实记忆数据、向量数据库或索引状态。
 
-## 新手发布 GitHub 步骤
-
-1. 在 GitHub 点 `New repository`。
-2. 填仓库名，比如 `ai-chat-ui`。
-3. 先不要勾选自动生成 README、License、gitignore，因为这里已经准备好了。
-4. 创建仓库后，选择上传文件。
-5. 把这个 `github-release` 文件夹里的所有内容上传上去，不要上传外层的 `dist/`、`source-current/` 或私有压缩包。
-6. 提交信息可以写：`Initial public release`。
-
-## 不要上传这些东西
-
-- `agent-chat-fullstack-private-with-brand.tar.gz`
-- `agent-chat-brand-assets-private.tar.gz`
-- `.env`
-- 数据库文件
-- 上传文件
-- 记忆库
-- 日志
-- VPS 上的备份目录
 
 ## 许可证
 
