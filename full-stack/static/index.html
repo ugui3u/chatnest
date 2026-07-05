@@ -100,7 +100,7 @@ button{font:inherit;border:0;background:none;color:inherit;cursor:pointer}textar
 .menu-item{width:100%;display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);text-align:left;border-radius:var(--radius-md)}.menu-item:active{background:var(--bg-surface)}.menu-item.delete{color:var(--accent)}
 #stream{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:var(--space-5) var(--page-pad) var(--space-6)}.stream-inner{min-height:100%;max-width:720px;margin:auto;display:flex;flex-direction:column}.stream-inner>*+*{margin-top:var(--msg-gap)}
 .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:12.5px}.empty-line{margin-top:calc(var(--space-3) + 0.5px);font:400 19.5px/1.4 var(--font-serif)}.empty.leaving{opacity:0;transition:opacity 300ms ease}
-.msg-user{display:flex;flex-wrap:wrap;justify-content:flex-end}.msg-user .bubble{font-family:var(--font-serif);font-size:var(--text-read);max-width:85%;padding:12px 18px;background:var(--bubble-user);border-radius:var(--radius-bubble);white-space:pre-wrap;word-break:break-word}
+.msg-user{display:flex;flex-wrap:wrap;justify-content:flex-end}.msg-user .bubble{font-family:var(--font-serif);font-size:var(--text-read);max-width:85%;padding:12px 18px;background:var(--bubble-user);border-radius:var(--radius-bubble);white-space:pre-wrap;word-break:break-word}.msg-time{display:block;width:100%;text-align:right;font-size:11px;color:var(--text-secondary);opacity:.55;margin-top:2px}
 .msg-user,.msg-claude,.topbar,.composer-wrap,.composer-box,.composer-actions,.composer-icon{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .msg-user .bubble>div:not(.message-attachments),.msg-claude .md,.msg-claude .md *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .msg-user.msg-pressing .bubble{opacity:.75;transition:opacity 120ms}.msg-claude.msg-pressing{opacity:.75;transition:opacity 120ms}
@@ -539,18 +539,19 @@ function setLayerState(element,open){element.classList.toggle('show',open);eleme
 function sheet(name,open){const s=$(`${name}Sheet`);if(open){s.classList.remove('expanded');s.style.transform=''}setLayerState($(`${name}Overlay`),open);setLayerState(s,open)}
 $('topbarModelButton').onclick=()=>{_modelPage='main';renderModelSheet();sheet('model',true)};$('modelOverlay').onclick=()=>{_modelPage='main';sheet('model',false)};
 
+function _cpy(txt){if(navigator.clipboard&&navigator.clipboard.writeText){return navigator.clipboard.writeText(txt)}return new Promise((resolve,reject)=>{const ta=document.createElement('textarea');ta.value=txt;ta.style.cssText='position:fixed;left:-9999px';document.body.append(ta);ta.select();try{document.execCommand('copy')?resolve():reject()}catch(e){reject(e)}finally{ta.remove()}})}
 function _buildUserRow(text,timestamp='',attachments=[],messageId=''){const row=document.createElement('div');row.className='msg-user';row.dataset.raw=text;row.dataset.timestamp=timestamp||'';if(messageId)row.dataset.msgId=messageId;
   const imgs=attachments.filter(a=>a.is_image);const files=attachments.filter(a=>!a.is_image);
   if(imgs.length){const wrap=document.createElement('div');wrap.className='user-images';imgs.forEach(a=>{const img=document.createElement('img');img.className='user-image';img.alt=a.name||'';if(a.preview){img.src=a.preview}else{img._lazyAtt=a;lazyImgObserver.observe(img)}wrap.append(img)});row.append(wrap)}
   const b=document.createElement('div');b.className='bubble';
   if(files.length){const fc=document.createElement('div');fc.className='message-attachments';files.forEach(item=>fc.append(attachmentCard(item)));b.append(fc)}
   if(text){const content=document.createElement('div');content.dataset.messageText='1';content.textContent=text;b.append(content)}
-  if(text||files.length)row.append(b);return row}
+  if(text||files.length)row.append(b);if(timestamp){const t=document.createElement('div');t.className='msg-time';t.textContent=new Date(timestamp).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});row.append(t)}return row}
 function addUser(text,timestamp='',attachments=[],messageId=''){const row=_buildUserRow(text,timestamp,attachments,messageId);streamInner.append(row);row.scrollIntoView({block:'end'});return row}
 function plainConversation(){return[...streamInner.children].map(x=>x.classList.contains('msg-user')?`You: ${x.dataset.raw}`:x.classList.contains('msg-claude')?`助手: ${x.dataset.raw||''}`:'').filter(Boolean).join('\n\n')}
 function actions(row,raw,userText,userAttachments=[]){if(row.querySelector('.message-actions'))return;const bar=document.createElement('div');bar.className='message-actions';const make=(name,title,fn)=>{const b=document.createElement('button');b.className='action-button';b.title=title;b.innerHTML=icon(name);b.onclick=e=>{e.stopPropagation();fn(b)};bar.append(b);return b};
-  make('copy','复制',async b=>{await navigator.clipboard.writeText(raw);b.textContent='✓';setTimeout(()=>b.innerHTML=icon('copy'),1000)});
-  make('share','分享',async()=>{await navigator.clipboard.writeText(location.href);toast('已复制链接')});
+  make('copy','复制',async b=>{await _cpy(raw);b.textContent='✓';setTimeout(()=>b.innerHTML=icon('copy'),1000)});
+  make('share','分享',async()=>{await _cpy(location.href);toast('已复制链接')});
   make('play','朗读',b=>{if(speechSynthesis.speaking){speechSynthesis.cancel();b.classList.remove('active');b.innerHTML=icon('play')}else{const u=new SpeechSynthesisUtterance(raw);u.lang='zh-CN';u.onend=()=>{b.classList.remove('active');b.innerHTML=icon('play')};speechSynthesis.speak(u);b.classList.add('active');b.innerHTML=icon('stop')}});
   const voteKey=`vote:${state.convId||'new'}:${raw.slice(0,40)}`;['up','down'].forEach(v=>{const b=make(v,v==='up'?'点赞':'点踩',btn=>{const next=localStorage.getItem(voteKey)===v?'':v;localStorage.setItem(voteKey,next);bar.querySelectorAll('[data-vote]').forEach(x=>x.classList.toggle('active',x.dataset.vote===next))});b.dataset.vote=v;b.classList.toggle('active',localStorage.getItem(voteKey)===v)});
   make('retry','重新生成',()=>retryAssistant(row,userText,userAttachments));
@@ -1663,7 +1664,7 @@ $('msgContextMenu').addEventListener('click',async e=>{
   const action=item.dataset.msgAction;
   const{raw,isUser,source}=_msgCtx;
   closeMsgContext();
-  if(action==='copy'){navigator.clipboard.writeText(raw).then(()=>toast('已复制')).catch(()=>toast('复制失败'))}
+  if(action==='copy'){_cpy(raw).then(()=>toast('已复制')).catch(()=>toast('复制失败'))}
   if(action==='edit'){
     if(!isUser){toast('只能编辑你发出的消息');return}
     enterEditMode(source,raw);
@@ -1927,7 +1928,7 @@ async function openSession(s){if(state.busy)stopActiveResponseNow();closeDrawer(
 }
 
 document.addEventListener('click',e=>{if(!$('sessionMenu').contains(e.target))closeSessionMenu()});
-async function patchSession(id,path,body){console.log('[patchSession]','id=',id,'path=',path,'body=',JSON.stringify(body));if(!id){console.log('[patchSession]','bail: no id');return false}const r=await api(`/api/sessions/${encodeURIComponent(id)}/${path}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok){const txt=await r.text();console.error('[patchSession]','FAIL status=',r.status,'response=',txt)}else{console.log('[patchSession]','OK')}return r.ok}
+async function patchSession(id,path,body){if(!id)return false;const r=await api(`/api/sessions/${encodeURIComponent(id)}/${path}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return r.ok}
 $('starSession').onclick=async()=>{const target=state.menuSession;if(!target)return;if(await patchSession(target.conv_id,'star',{starred:!target.starred})){target.starred=!target.starred;if(target.conv_id===state.convId)state.starred=target.starred;closeSessionMenu();loadSessions()}};
 function askDialog({title,message='',value='',input=true,confirm='确认'}){return new Promise(resolve=>{const overlay=$('dialogOverlay'),field=$('dialogInput');$('dialogTitle').textContent=title;$('dialogMessage').textContent=message;field.classList.toggle('hidden',!input);field.value=value;$('dialogConfirm').textContent=confirm;overlay.classList.remove('hidden');if(input)field.focus();const done=v=>{overlay.classList.add('hidden');$('dialogCancel').onclick=null;$('dialogConfirm').onclick=null;resolve(v)};$('dialogCancel').onclick=()=>done(null);$('dialogConfirm').onclick=()=>done(input?field.value.trim():true)})}
 $('renameSession').onclick=async()=>{const target=state.menuSession;if(!target)return;closeSessionMenu();const title=await askDialog({title:'Rename conversation',value:target.title});if(title&&await patchSession(target.conv_id,'title',{title})){if(target.conv_id===state.convId){state.currentTitle=title;updateSessionHeader()}loadSessions()}};
@@ -1984,7 +1985,7 @@ document.addEventListener('contextmenu',e=>{const t=e.target;if(!t?.closest)retu
 $('sessionActionBackdrop').onclick=closeActionMode;
 $('deleteConfirmBtn').onclick=async()=>{const popover=$('deleteConfirmPopover');const convId=popover.dataset.convId;const isCurrent=popover.dataset.isCurrent==='1';closeActionMode();if(!convId)return;const r=await api(`/api/sessions/${encodeURIComponent(convId)}`,{method:'DELETE'});if(r.ok){if(isCurrent)newChat();else loadSessions()}};
 $('renameCancelBtn').onclick=closeActionMode;
-$('renameConfirmBtn').onclick=async()=>{const target=sessionContext.session;const newTitle=$('renameInput').value.trim();console.log('[rename]','target=',target,'newTitle=',newTitle,'conv_id=',target?.conv_id);if(!target||!newTitle){console.log('[rename]','bail: no target or empty title');closeActionMode();return}if(newTitle===target.title){console.log('[rename]','bail: same title');closeActionMode();return}const conv_id=target.conv_id,wasCurrent=(conv_id===state.convId);closeActionMode();console.log('[rename]','calling patchSession',conv_id,newTitle);const ok=await patchSession(conv_id,'title',{title:newTitle});console.log('[rename]','patchSession result=',ok);if(ok){if(wasCurrent){state.currentTitle=newTitle;updateSessionHeader()}loadSessions()}};
+$('renameConfirmBtn').onclick=async()=>{const target=sessionContext.session;const newTitle=$('renameInput').value.trim();if(!target||!newTitle){closeActionMode();return}if(newTitle===target.title){closeActionMode();return}const conv_id=target.conv_id,wasCurrent=(conv_id===state.convId);closeActionMode();if(await patchSession(conv_id,'title',{title:newTitle})){if(wasCurrent){state.currentTitle=newTitle;updateSessionHeader()}loadSessions()}};
 $('renameInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('renameConfirmBtn').click()}if(e.key==='Escape')closeActionMode()});
 $('sessionContextBackdrop').onclick=closeSessionContextMenu;
 $('sessionContextMenu').addEventListener('click',async e=>{
