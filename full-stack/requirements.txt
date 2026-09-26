@@ -1,4 +1,4 @@
-anthropic>=0.113.0
+anthropic>=0.113.0,<1
 claude-agent-sdk==0.2.97
 fastapi
 python-multipart

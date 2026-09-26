@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+*.db-*
+.provider-keys.json
+uploads/
+memories/
+profile.json
+CLAUDE.md
+chroma_db/
+chroma_state.json
+*.log
+.DS_Store

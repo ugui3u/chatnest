@@ -11,6 +11,7 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
+import anthropic
 from dotenv import load_dotenv
 
 
@@ -35,6 +36,7 @@ from app.claude import (
     summarize_tool_use,
     summarize_traces,
 )
+from app.claude_api import stream_chat_api, summarize_api, validate_api_settings
 from app.codex_api import stream_codex_chat
 from app.memory import (
     MAX_MEMORY_CHARS,
@@ -60,6 +62,7 @@ from app.store import (
     ConversationNotFound,
     begin_turn,
     complete_turn,
+    conversation_messages,
     ensure_conversation,
     initialize_store,
     prepare_edit_turn,
@@ -106,6 +109,10 @@ app = FastAPI(
     openapi_url=None,
     lifespan=lifespan,
 )
+
+CHAT_BACKEND = os.environ.get("CHAT_BACKEND", "sdk").strip().lower()
+if CHAT_BACKEND not in {"sdk", "api"}:
+    raise ValueError("CHAT_BACKEND must be sdk or api")
 
 AUTH_MODE = os.environ.get("AUTH_MODE", "app").strip().lower()
 if AUTH_MODE not in {"app", "both"}:
@@ -375,7 +382,12 @@ async def chat(body: ChatBody) -> StreamingResponse:
         response_text = ""
         response_thinking = ""
         response_traces: list[dict] = []
+        pending_chunk = None
+        chunk_iter = None
+        use_api = CHAT_BACKEND == "api" and body.model != "codex"
         try:
+            if use_api:
+                validate_api_settings()
             await get_registry().assert_available()
             display_message = body.message.strip()
             current_attachment_items = attachment_items
@@ -420,9 +432,12 @@ async def chat(body: ChatBody) -> StreamingResponse:
                 ensure_ascii=False,
             )
             yield f"event: conversation\ndata: {payload}\n\n"
+            if not use_api and body.model != "codex" and resume_id and resume_id.startswith("api-"):
+                context_messages, _, _ = conversation_messages(conv_id)
+                resume_id = None
             prompt = (
                 render_context_prompt(context_messages)
-                if context_messages
+                if context_messages and not use_api
                 else display_message
             )
             recalled = recall_memory(display_message)
@@ -435,7 +450,7 @@ async def chat(body: ChatBody) -> StreamingResponse:
                     "</recalled-memory>\n\n"
                     f"{prompt}"
                 )
-            if current_attachment_items and not context_messages:
+            if current_attachment_items and not context_messages and not use_api:
                 paths = "\n".join(item["path"] for item in current_attachment_items)
                 prompt += (
                     "\n\n[用户上传了以下文件，请使用 Read 工具查看：\n"
@@ -446,6 +461,12 @@ async def chat(body: ChatBody) -> StreamingResponse:
             if body.model == "codex":
                 chat_stream = stream_codex_chat(*chat_args)
                 first_chunk = await chat_stream.__anext__()
+            elif use_api:
+                chat_stream = stream_chat_api(
+                    prompt, conv_id, body.model, body.effort, body.extended,
+                    log_timing, user_message_id=user_message_id,
+                )
+                first_chunk = None
             else:
                 try:
                     chat_stream = stream_chat(*chat_args)
@@ -458,25 +479,28 @@ async def chat(body: ChatBody) -> StreamingResponse:
                     first_chunk = await chat_stream.__anext__()
 
             async def _merged():
-                yield first_chunk
-                async for c in chat_stream:
-                    yield c
+                try:
+                    if first_chunk is not None:
+                        yield first_chunk
+                    async for c in chat_stream:
+                        yield c
+                finally:
+                    await chat_stream.aclose()
 
             heartbeat_interval = 15
             chunk_iter = _merged().__aiter__()
-            exhausted = False
-            while not exhausted:
+            while True:
                 try:
-                    chunk = await asyncio.wait_for(
-                        chunk_iter.__anext__(),
-                        timeout=heartbeat_interval,
-                    )
+                    if pending_chunk is None:
+                        pending_chunk = asyncio.create_task(chunk_iter.__anext__())
+                    done, _ = await asyncio.wait({pending_chunk}, timeout=heartbeat_interval)
+                    if not done:
+                        yield ": heartbeat\n\n"
+                        continue
+                    chunk = pending_chunk.result()
+                    pending_chunk = None
                 except StopAsyncIteration:
                     break
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-                    continue
-
                 if chunk["event"] == "delta":
                     response_text += chunk.get("text", "")
                 elif chunk["event"] == "thinking":
@@ -565,10 +589,29 @@ async def chat(body: ChatBody) -> StreamingResponse:
                 ensure_ascii=False,
             )
             yield f"event: error\ndata: {payload}\n\n"
+        except anthropic.APIError as exc:
+            if branch_restore_id and not branch_committed:
+                restore_branch(branch_restore_id)
+            status = getattr(exc, "status_code", None)
+            logger.warning("API request failed: type=%s status=%s", type(exc).__name__, status)
+            if status in {401, 403}:
+                message = "API 认证或权限失败，请检查 key、服务商权限和访问限制"
+            elif status == 404:
+                message = "API 地址或模型不存在，请检查 base URL 和 models.json 中的模型 ID"
+            elif status == 400:
+                message = "API 不接受当前参数，请检查模型、Anthropic 协议兼容性，或关闭扩展思考后重试"
+            elif status == 429:
+                message = "API 请求受限，请检查额度或稍后重试"
+            elif isinstance(exc, anthropic.APIConnectionError):
+                message = "无法连接 API，请检查后端所在机器的网络、代理和服务商地址"
+            else:
+                message = "API 服务暂时不可用，请稍后重试"
+            payload = json.dumps({"message": message}, ensure_ascii=False)
+            yield f"event: error\ndata: {payload}\n\n"
         except Exception as exc:
             if branch_restore_id and not branch_committed:
                 restore_branch(branch_restore_id)
-            logger.exception("Claude SDK request failed")
+            logger.exception("Chat backend request failed")
             detail = str(exc)
             if "not available" in detail.lower() or "invalid model" in detail.lower():
                 message = f"所选模型当前不可用：{body.model}"
@@ -580,7 +623,14 @@ async def chat(body: ChatBody) -> StreamingResponse:
             )
             yield f"event: error\ndata: {payload}\n\n"
         finally:
-            chat_lock.release()
+            try:
+                if pending_chunk is not None:
+                    pending_chunk.cancel()
+                    await asyncio.gather(pending_chunk, return_exceptions=True)
+                if chunk_iter is not None:
+                    await chunk_iter.aclose()
+            finally:
+                chat_lock.release()
 
     return StreamingResponse(
         sse(),
@@ -595,7 +645,8 @@ async def chat(body: ChatBody) -> StreamingResponse:
 @app.post("/api/thinking-summary", dependencies=[Depends(require_auth)])
 async def thinking_summary(body: ThinkingSummaryBody) -> dict:
     try:
-        summary = await summarize_thinking(body.thinking)
+        summary = (await summarize_api(body.thinking) if CHAT_BACKEND == "api"
+                   else await summarize_thinking(body.thinking))
     except Exception:
         logger.exception("thinking summary failed")
         summary = ""
@@ -605,7 +656,9 @@ async def thinking_summary(body: ThinkingSummaryBody) -> dict:
 @app.post("/api/tool-caption", dependencies=[Depends(require_auth)])
 async def tool_caption(body: ToolCaptionBody) -> dict:
     try:
-        caption = await summarize_tool_use(body.tool_name, body.tool_input, body.tool_output)
+        caption = (await summarize_api(f"{body.tool_name}\n{body.tool_input}\n{body.tool_output}")
+                   if CHAT_BACKEND == "api" else
+                   await summarize_tool_use(body.tool_name, body.tool_input, body.tool_output))
     except Exception:
         logger.exception("tool caption failed")
         caption = ""

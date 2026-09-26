@@ -68,7 +68,9 @@ print(secrets.token_urlsafe(32))
 PY
 ```
 
-把生成的值填进 `.env`，同时设置 `CHAT_PASSWORD`，然后启动：
+把生成的值填进 `.env`，同时设置 `CHAT_PASSWORD`，然后选择后端：默认 `CHAT_BACKEND=sdk` 使用 Claude Code；设置 `CHAT_BACKEND=api`
+并填写 API key 和 Anthropic 兼容地址可直接使用 API，无需 CC 登录。
+两种模式的配置和能力差异见 [完整说明](full-stack/README.md#选择-cc-或-api-后端)。然后启动：
 
 ```bash
 ./run.sh
