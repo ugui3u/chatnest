@@ -25,7 +25,7 @@ os.environ.update({
 import anthropic
 import httpx
 from fastapi.testclient import TestClient
-from app import main, claude_api as api
+from app import main, claude_api as api, claude
 from app.store import conversation_messages
 
 
@@ -186,6 +186,45 @@ class BackendsTest(unittest.TestCase):
         self.assertIn("done", result)
         self.assertIsNone(calls[0][2])
         self.assertIn("hello from API", calls[0][0])
+
+    def test_real_api_prompt_stays_stable_and_recall_occurs_once(self):
+        with patch.object(api, "build_system_prompt", new=claude.build_system_prompt), \
+             patch.object(claude, "build_profile_context", return_value="saved preferences"), \
+             patch.object(claude, "fetch_memory_hits", side_effect=AssertionError("duplicate recall")), \
+             patch.object(main, "recall_memory", side_effect=["first recall", "second recall"]) as recall:
+            first = dict(self.chat())
+            self.assertIn("done", first)
+            second = dict(self.chat(message="next", conversation_id=first["done"]["conversation_id"]))
+            self.assertIn("done", second)
+        self.assertEqual(recall.call_count, 2)
+        self.assertEqual(self.requests[-2]["system"], self.requests[-1]["system"])
+        self.assertIn("saved preferences", self.requests[-1]["system"])
+        self.assertNotIn("recall", self.requests[-1]["system"])
+        self.assertEqual(json.dumps(self.requests[-1]["messages"]).count("second recall"), 1)
+
+    def test_sdk_fingerprint_stays_stable_and_keeps_tool_budget(self):
+        class Registry:
+            def __init__(self):
+                self.turns = []
+            async def submit(self, *args):
+                self.turns.append(args)
+                queue = asyncio.Queue()
+                await queue.put({"event": "done", "session_id": "sdk-test"})
+                await queue.put(None)
+                return queue
+        registry = Registry()
+        async def run():
+            for message in ["first recalled fact", "different recalled fact"]:
+                async for _ in claude.stream_chat(message, "test-conversation"):
+                    pass
+        with patch.object(claude, "get_registry", return_value=registry), \
+             patch.object(claude, "build_profile_context", return_value="saved preferences"), \
+             patch.object(claude, "fetch_memory_hits", side_effect=AssertionError("duplicate recall")):
+            asyncio.run(run())
+        first, second = registry.turns
+        self.assertEqual(first[3], second[3])
+        self.assertEqual(second[2].max_turns, 8)
+        self.assertEqual(second[1], "different recalled fact")
 
     def test_adaptive_thinking_parameters(self):
         self.chat(extended=True, effort="high")

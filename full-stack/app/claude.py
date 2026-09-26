@@ -129,6 +129,11 @@ def thinking_options(
 
 
 async def build_system_prompt(message: str, model: str) -> str:
+    """Stable profile context shared by SDK and API backends.
+
+    Per-turn recall is added once to the user message by app.main. Keep this
+    async two-argument interface compatible with both callers.
+    """
     profile_context = build_profile_context().strip()
     memory = "" if profile_context else read_memory().strip()
     system_prompt = f"You are running as model {model}. If asked which model you are, answer with that identifier.\n\n{SYSTEM_PROMPT}"
@@ -141,13 +146,6 @@ async def build_system_prompt(message: str, model: str) -> str:
         )
     if memory:
         system_prompt += f"\n\n以下是用户明确保存的长期记忆：\n{memory}"
-    memory_hits = await fetch_memory_hits(message)
-    if memory_hits:
-        system_prompt += (
-            "\n\n以下是从记忆书架向量检索到的相关条目（可能相关也可能没用，"
-            "自己判断是否引用；不要照搬，更不要逐字复读）：\n"
-            f"{memory_hits}"
-        )
     return system_prompt
 
 

@@ -105,6 +105,8 @@ Profile 可继续在界面手动维护，本地记忆检索可继续启用。
 ```bash
 pip install httpx
 python3 -m unittest discover -s tests -v
+# 可选：使用 Node.js 验证剪贴板原生路径、HTTP 回退和失败清理
+node tests/test_clipboard.cjs
 ```
 
 测试使用隔离的临时数据库和模拟 API，覆盖聊天后端路由、多轮历史、
