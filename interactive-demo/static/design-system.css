@@ -1,0 +1,80 @@
+/* ============================================================
+   design-system.css — mobile chat design system
+   唯一视觉真理来源。所有样式必须引用此处变量。
+   禁止在任何其他文件中发明颜色、间距、圆角、字体值。
+   ============================================================ */
+
+:root {
+  /* —— 色彩：奶油纸张基调 —— */
+  --bg-primary:    #F8F8F6;            /* 页面底色：light theme */
+  --bg-surface:    #F6F6F4;            /* 浮层/输入框：取自官端 */
+  --bubble-user:   #EEEEEC;            /* 用户消息气泡：取自官端 */
+  --bg-sunken:     #E6E6E4;            /* 按压态、代码块底色 */
+  --text-primary:  #1F1E1D;            /* 正文：暖近黑 */
+  --text-secondary:#6E6D66;            /* 次要文字、时间戳 */
+  --text-faint:    #A6A39A;            /* 占位符 */
+
+  /* —— 主题色：accent orange（仅按钮/发送图标/光标/强调） —— */
+  --accent:        #DA7756;
+  --accent-hover:  #C96846;
+  --accent-fg:     #FFFFFF;            /* 橙底上的文字 */
+
+  /* —— 边框：极淡，靠留白而非线条分层 —— */
+  --border:        rgba(31, 30, 29, 0.10);
+  --border-strong: rgba(31, 30, 29, 0.18);  /* 输入框聚焦 */
+
+  /* —— 字体 —— */
+  --font-serif: ui-serif, Georgia, 'PingFang SC', sans-serif;
+  --font-sans:  -apple-system, system-ui, 'PingFang SC', sans-serif;
+  --font-mono:  ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* —— 字号 / 行高 —— */
+  --text-base:   16px;
+  --text-sm:     13px;
+  --text-title:  19px;
+  --leading:     1.65;                 /* 正文行高，不得低于 1.6 */
+
+  /* —— 圆角 —— */
+  --radius-md:   12px;
+  --radius-lg:   28px;                 /* 输入区容器 */
+  --radius-bubble: 22px;               /* 用户气泡 */
+  --radius-full: 999px;                /* 发送按钮 */
+
+  /* —— 间距（呼吸感） —— */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --msg-gap: 28px;                     /* 消息之间的垂直间距 */
+  --page-pad: 16px;                    /* 移动端页面左右留白 */
+
+  /* —— 动效：克制 —— */
+  --transition: 200ms ease;
+
+  /* —— 阴影：几乎不用，仅输入区悬浮一层极轻的 —— */
+  --shadow-soft: 0 1px 3px rgba(31, 30, 29, 0.05);
+  /* —— 底部 composer 外圈轻 halo（light theme） —— */
+  --shadow-composer:
+    0 0 18px rgba(0, 0, 0, 0.045),
+    0 8px 22px rgba(0, 0, 0, 0.045);
+}
+
+/* —— 暗色模式 —— */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary:    #20201F;            /* dark theme */
+    --bg-surface:    #181818;            /* 输入框/浮层：取自 IMG_4126，比背景更深 */
+    --bubble-user:   #111111;            /* 用户消息气泡：取自官端，比背景更深 */
+    --bg-sunken:     #1A1A19;            /* 按压态/代码块：再深一档 */
+    --text-primary:  #ECEAE4;
+    --text-secondary:#A6A39A;
+    --text-faint:    #6E6D66;
+    --border:        rgba(236, 234, 228, 0.10);
+    --border-strong: rgba(236, 234, 228, 0.22);
+    --shadow-soft:   none;
+    --shadow-composer: var(--shadow-soft);  /* 暗色暂不加 halo，保持原观感 */
+    /* --accent 不变：accent orange在两种模式下一致 */
+  }
+}

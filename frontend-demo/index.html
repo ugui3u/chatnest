@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <meta name="theme-color" content="#F8F8F6" media="(prefers-color-scheme:light)">
 <meta name="theme-color" content="#20201F" media="(prefers-color-scheme:dark)">
-<title>Chatnest · 交互演示</title>
+<title>AI 聊天</title>
 <style></style>
 <style>
 :root{
@@ -229,7 +229,6 @@ body.sidebar-action-open .rename-dialog input{-webkit-user-select:text;user-sele
 <script src="static/marked.min.js?v=2"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
-<style>.demo-welcome{max-width:540px;margin:18px auto 0;padding:0 16px;font-family:var(--font-sans);text-align:center}.demo-welcome p{font-size:12px;color:var(--text-secondary);margin:0 0 16px}.demo-welcome button{display:block;width:100%;padding:12px 18px;margin:8px 0;border:1px solid var(--border-strong);border-radius:14px;background:var(--bg-surface);color:var(--text-primary);font:inherit;font-size:14px;cursor:pointer;text-align:left}.demo-welcome button:hover{border-color:var(--accent)}.demo-welcome button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.demo-welcome small{display:block;font-size:11px;line-height:1.6;color:var(--text-secondary);margin:14px 0}@media(max-height:720px){.demo-welcome{margin-top:8px}.demo-welcome button{padding:8px 14px;margin:5px 0}.demo-welcome small{margin:8px 0}}</style>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute">
@@ -506,7 +505,7 @@ function scrollBottom(){stream.scrollTop=stream.scrollHeight}
 (()=>{const btn=$('scrollToBottom');if(!btn)return;function check(){const atBottom=stream.scrollHeight-stream.scrollTop-stream.clientHeight<40;btn.classList.toggle('hidden',atBottom)}stream.addEventListener('scroll',check,{passive:true});new MutationObserver(check).observe(streamInner,{childList:true,subtree:true,characterData:true});btn.addEventListener('click',()=>{stream.scrollTo({top:stream.scrollHeight,behavior:'smooth'})});check()})();
 function appendDisclaimer(){document.querySelector('.stream-disclaimer')?.remove();if(!streamInner.querySelector('.msg-claude'))return;const note=document.createElement('div');note.className='stream-disclaimer';note.innerHTML=`${logo('mark-20')}<span>AI 可能会出错。<br>请自行核对重要信息。</span>`;streamInner.append(note)}
 async function greeting(){try{const r=await fetch('/api/splash');if(r.ok)return(await r.json()).line}catch{}return"What's on your mind?"}
-async function resetEmpty(){state.convId=null;state.legacySessionId=null;state.currentTitle='新对话';state.starred=false;localStorage.removeItem('chat_conversation');localStorage.removeItem('chat_session');streamInner.innerHTML=`<div class="empty" id="empty">${logo('mark-35')}<div class="empty-line"></div></div>`;$('empty').querySelector('.empty-line').textContent=await greeting();input.placeholder='和助手聊天';updateSessionHeader();window.renderDemoWelcome?.($('empty'))}
+async function resetEmpty(){state.convId=null;state.legacySessionId=null;state.currentTitle='新对话';state.starred=false;localStorage.removeItem('chat_conversation');localStorage.removeItem('chat_session');streamInner.innerHTML=`<div class="empty" id="empty">${logo('mark-35')}<div class="empty-line"></div></div>`;$('empty').querySelector('.empty-line').textContent=await greeting();input.placeholder='和助手聊天';updateSessionHeader()}
 async function dismissEmpty(){input.placeholder='回复助手';const el=$('empty');if(!el)return;el.classList.add('leaving');await new Promise(r=>setTimeout(r,300));el.remove()}
 
 async function loadModels(){try{const r=await fetch('/api/models');state.models=(await r.json()).models}catch{state.models=[{id:'claude-sonnet-4-6',label:'Sonnet 4.6',desc:'Everyday tasks',thinking:'adaptive',primary:true}]}
@@ -2020,127 +2019,51 @@ addEventListener('orientationchange',closeSessionContextMenu);
 addEventListener('pagehide',closeSessionContextMenu);
 
 if(window.AGENT_APP_DEMO){
-  // This public demo is a local scripted simulation, never a model/API client.
   const demoModels=[
-    {id:'demo-balanced',label:'Balanced',desc:'自然对话 · 场景演示',thinking:'adaptive',primary:true},
-    {id:'demo-fast',label:'Fast',desc:'精简回复 · 快速预览',thinking:'none',primary:true},
-    {id:'demo-codex',label:'Builder',desc:'结构化表达 · 产品视角',thinking:'none',primary:true}
+    {id:'demo-balanced',label:'Balanced',desc:'Demo model with mock streaming',thinking:'adaptive',primary:true},
+    {id:'demo-fast',label:'Fast',desc:'Short mock replies',thinking:'none',primary:true},
+    {id:'demo-codex',label:'Codex',desc:'Demo tool/status flow',thinking:'none',primary:true}
   ];
-  let demoProfile={fullName:'',nickname:'',savedMemories:[],preferences:{enabled:true,content:'用自然、友好的语气回复。'},claudeExportImport:{},updatedAt:Date.now()};
-  const demoSessions=[], messages=new Map(), contexts=new Map();
-  let sequence=0;
-  const uid=()=>`demo-${Date.now()}-${++sequence}`;
-  const stamp=()=>new Date().toISOString();
-  const json=(data,status=200)=>Promise.resolve(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}));
-  const event=(name,data)=>`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
-  const remember=content=>{
-    if(!demoProfile.savedMemories.some(m=>m.content===content))demoProfile.savedMemories.push({id:uid(),content,enabled:true,source:'manual',createdAt:Date.now(),updatedAt:Date.now()});
-  };
-  function answer(text,ctx){
-    const t=text.trim();
-    if(/忘记|清除.*记忆|删除.*记忆/.test(t)){
-      demoProfile.savedMemories=[];ctx.topic='memory';
-      return '好，这次演示里保存的记忆已经清空了。\n\n你可以再问「你记得我什么」，检查删除后的结果。你仍能在当前对话里看到刚才的消息，但它们不再属于保存的记忆。';
-    }
-    if(/记得我|记住了什么|我的偏好|我的记忆/.test(t)&&!/^记住|按.*偏好|根据.*记忆/.test(t)){
-      ctx.topic='memory';const saved=demoProfile.savedMemories.filter(m=>m.enabled!==false);
-      return saved.length?'我现在记得这些：\n\n'+saved.map(m=>`- ${m.content}`).join('\n')+'\n\n这些来自你在本次演示中明确保存的内容。打开左侧菜单里的 Profile，可以修改；也可以直接说「忘记这些」。':'我还没有保存关于你的记忆。\n\n试着告诉我：「记住：我喜欢雨天，喝咖啡不加糖。」然后新建一段对话，问我「你记得我什么」。只要不刷新网页，演示记忆就还在。';
-    }
-    if(/^(请)?(帮我)?记住[：:,，\s]/.test(t)){
-      const content=t.replace(/^(请)?(帮我)?记住[：:,，\s]+/,'').trim().slice(0,500);
-      if(content)remember(content);ctx.topic='memory';
-      return content?`记住了：${content}\n\n下次聊到相关话题，我就有一个可以参考的小线索。你可以问「你记得我什么」，或说「按我的偏好，写一个开场」。\n\n这条记忆只保留在当前网页的演示状态中，刷新即可重置。`:'想让我记住什么？可以试试「记住：我喜欢雨天，喝咖啡不加糖」。';
-    }
-    if(/按.*偏好|根据.*记忆/.test(t)){
-      const memory=demoProfile.savedMemories.filter(m=>m.enabled!==false).map(m=>m.content).join('；');ctx.topic='memory';
-      if(!memory)return '还没有可用的偏好。先说「记住：我喜欢雨天，喝咖啡不加糖」，再让我写一个开场吧。';
-      return `我参考了你保存的偏好：「${memory}」。\n\n`+(/雨/.test(memory)?'雨水顺着玻璃慢慢往下走，店里只剩一盏暖灯。':'傍晚的书店很安静，靠窗的位置刚刚空出来。')+(/咖啡/.test(memory)?'你把咖啡放在桌边'+(/不加糖|无糖/.test(memory)?'，没有加糖':'')+'。':'你在桌边坐下。')+'\n\n对面的人把书往旁边挪了一点：「这个位置，我替你留着。」\n\n这是规则驱动的记忆应用示例：识别偏好，再选择对应的场景细节。你可以修改记忆后再试一次。';
-    }
-    if(/故事|便利店|雨夜|互动叙事/.test(t)&&!/^继续/.test(t)){
-      ctx.topic='story';ctx.step=0;ctx.branch='';
-      return '凌晨两点十七分，你推开便利店的门。\n\n收银员没有抬头，却准确叫出了你的名字。柜台上摆着一杯还热的咖啡，杯套写着：\n\n**「如果你又忘了，先不要相信门外的人。」**\n\n玻璃门响了两下。外面站着一个和你撑着同款伞的人。\n\n你想怎么做？\n**A · 问收银员：我们见过吗？**\n**B · 翻过杯套，看看背面。**\n\n回复 A 或 B，故事会走向不同的地方。';
-    }
-    if(ctx.topic==='story'&&/^(a|b|Ａ|Ｂ|继续|然后|再来|问收银员|翻过)/i.test(t)){
-      if(ctx.step===0){ctx.branch=/^(b|Ｂ|翻过)/i.test(t)?'B':'A';ctx.step=1;
-        return ctx.branch==='A'?'收银员停下擦杯子的动作。\n\n「见过。每次你都会问这句话。」他把一张小票推过来。日期是明天，最下面印着一句：**本次记忆保存失败。**\n\n门外的人忽然敲得更急了。\n\n你要 **A · 请他讲完上一次的事**，还是 **B · 带着小票去开门**？':'杯套背面是一张手绘地图。你认出了自己的住处，却发现门牌号被划掉，改成了这家便利店的地址。\n\n收银员低声说：「这一次，你看背面了。」\n\n地图上还有两条路线。你要 **A · 走向仓库的蓝色门**，还是 **B · 留在柜台前等门外的人**？';
-      }
-      if(ctx.step===1){ctx.step=2;const b=/^(b|Ｂ)/i.test(t);
-        return ctx.branch==='A'?(b?'你握着小票推开门。门外的人没有说话，只递给你半张相同的小票。拼在一起，背面是你自己的字：\n\n「我不是忘记了你。我只是想再认识你一次。」\n\n**结局：第二次初见。**':'收银员打开抽屉，里面是你留下的十七封信。最近的一封只有一句：\n\n「如果我再来，请提醒我：有些事情可以重新选择。」\n\n你把那杯咖啡喝完，决定这一次留下来听他说完。\n\n**结局：留下来的记忆。**'):(b?'门外的人终于走进来，把湿伞放在门边。\n\n「你找到回家的路了吗？」\n\n你看了看地图，把它折起来：「找到了。不过今晚想在这里坐一会儿。」\n\n**结局：雨停之前。**':'蓝色门后不是仓库，是一间亮着灯的旧书房。桌上的录音机正在播放你的声音：\n\n「欢迎回来。这次，请替自己选一个喜欢的结尾。」\n\n你按下停止键，打开了窗。\n\n**结局：未写完的下一页。**');
-      }
-      return '这一条故事线到这里收束了。想看看另一条路，可以说「重新开始故事」，再换一个选项。也可以问「这个产品怎么设计」，看看故事背后的交互思路。';
-    }
-    if(/产品|设计|项目|你能做什么|介绍|功能|演示|hello|你好/i.test(t)&&!(/为什么|怎么做|展开|继续|详细/.test(t)&&ctx.topic==='product')){
-      ctx.topic='product';ctx.step=0;
-      return '你好，欢迎来到 Chatnest。这里把对话、个人偏好和记忆放在同一个交互空间里。\n\n你可以用三个小场景体验它：\n\n1. **记忆**：说「记住：我喜欢雨天，喝咖啡不加糖」，再新建对话检查召回。\n2. **互动叙事**：说「来一个雨夜便利店故事」，用 A/B 选择推动剧情。\n3. **表达风格**：切换顶部的 Balanced、Fast 或 Builder，看同一个场景如何换一种呈现。\n\n这个公开版本使用本地脚本与模拟事件，不调用真实模型。想了解产品取舍，可以继续问「为什么这样设计」。';
-    }
-    if(/为什么|怎么做|展开|继续|详细|然后/.test(t)&&ctx.topic==='product'){
-      ctx.step=(ctx.step||0)+1;
-      return ctx.step===1?'我想让记忆成为用户能看见、能改动的功能。\n\n**可解释**：告诉用户这次参考了哪条偏好。\n**可控制**：记忆可以查看、编辑和清空。\n**可衔接**：在同一网页中新建对话，仍可调用保存的偏好。\n\n这个演示用简单规则呈现完整的体验路径；真实后端的检索、存储与模型调用，需要另行部署。\n\n再说「继续」，可以看一份功能验收清单。':'我会用这样的场景检查体验是否完整：\n\n- 保存一条偏好 → 新对话可以召回。\n- 修改或删除记忆 → 下一次回答随之变化。\n- 中途停止回复 → 界面立即恢复可输入状态。\n- 切换模型风格 → 仍保留同一段故事的上下文。\n- 打开历史 → 能看到刚才的实际演示消息。\n\n你可以直接在页面里试这些操作。';
-    }
-    if(/谢谢|好玩|不错|哈哈|嘿嘿/.test(t))return '嘿，收到。你刚才的选择还在这段对话里。\n\n想换个体验的话，可以让我记住一个小偏好；也可以新建对话，再来一场雨夜便利店的偶遇。';
-    return '这句话我暂时没有对应的演示剧情。这个页面使用预设脚本，不会像真实大模型一样理解所有自由输入。\n\n你可以试试：\n- 「记住：我喜欢雨天，喝咖啡不加糖」\n- 「来一个雨夜便利店故事」\n- 「介绍一下这个产品」\n\n如果刚才在玩故事，回复 A 或 B 就能继续。';
-  }
-  function streamResponse(events,signal,onComplete){
-    const enc=new TextEncoder();let timer,closed=false,abort;
-    return new Response(new ReadableStream({start(controller){
-      const stop=()=>{if(closed)return;closed=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);controller.close()};abort=stop;
-      signal?.addEventListener('abort',abort,{once:true});
-      if(signal?.aborted){stop();return;}
-      let i=0;function push(){if(closed)return;if(i===events.length){onComplete();stop();return;}controller.enqueue(enc.encode(events[i++]));timer=setTimeout(push,45);}push();
-    },cancel(){closed=true;clearTimeout(timer);signal?.removeEventListener('abort',abort)}}),{headers:{'Content-Type':'text/event-stream'}});
+  const demoProfile={fullName:'',nickname:'',savedMemories:[{id:'demo-memory-1',content:'这是一条演示用记忆。',enabled:true,source:'manual',createdAt:Date.now(),updatedAt:Date.now()}],preferences:{enabled:true,content:'用自然、友好的语气回复。'},claudeExportImport:{},updatedAt:Date.now()};
+  const demoSessions=[{conv_id:'demo-session',title:'演示对话',starred:false,created_at:new Date().toISOString(),updated_at:new Date().toISOString()}];
+  const demoMessages=[
+    {id:'demo-u1',role:'user',text:'给我看看 UI 演示',timestamp:new Date().toISOString()},
+    {id:'demo-a1',role:'assistant',text:'这是一个纯前端演示版。工具状态、模型切换、编辑、记忆页面和消息操作都可以在没有后端的情况下预览。',thinking:'检查演示数据，并选择简洁的说明方式。',traces:[{type:'tool_use',id:'tool-demo',name:'Read',input:{file_path:'demo.json'}},{type:'tool_result',tool_use_id:'tool-demo',content:'演示用工具输出',is_error:false}],timestamp:new Date().toISOString()}
+  ];
+  function demoJson(data,status=200){return Promise.resolve(new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}}))}
+  function demoSse(events){
+    const enc=new TextEncoder();
+    return new Response(new ReadableStream({start(controller){let i=0;function push(){if(i>=events.length){controller.close();return}controller.enqueue(enc.encode(events[i++]));setTimeout(push,260)}push()}}),{status:200,headers:{'Content-Type':'text/event-stream'}});
   }
   const realFetch=window.fetch.bind(window);
   window.fetch=(url,options={})=>{
-    const path=new URL(String(url),location.href).pathname,method=(options.method||'GET').toUpperCase();
-    let body={};try{body=JSON.parse(options.body||'{}')}catch{}
-    if(path==='/api/auth')return json({token:'demo-token'});
-    if(path==='/api/splash')return json({period:'demo',line:'一个故事，或一条想被记住的小事。'});
-    if(path==='/api/models')return json({models:demoModels});
-    if(path==='/api/profile'){
-      if(method==='PUT')demoProfile=normalizeProfileClient(body);
-      return json({profile:demoProfile});
+    const path=String(url);
+    if(path.endsWith('/api/auth'))return demoJson({token:'demo-token'});
+    if(path.endsWith('/api/splash'))return demoJson({period:'demo',line:'前端演示'});
+    if(path.endsWith('/api/models'))return demoJson({models:demoModels});
+    if(path.endsWith('/api/profile'))return demoJson({profile:demoProfile});
+    if(path.endsWith('/api/diary'))return demoJson({entries:[{date:'演示',content:'这是一条纯前端演示日记。'}]});
+    if(path.endsWith('/api/thinking-summary'))return demoJson({summary:'整理演示思路'});
+    if(path.endsWith('/api/tool-caption'))return demoJson({caption:'读取演示数据'});
+    if(path.endsWith('/api/upload'))return demoJson({conversation_id:'demo-session',attachments:[]});
+    if(path.endsWith('/api/sessions'))return demoJson({sessions:demoSessions});
+    if(/\/api\/sessions\/[^/]+\/messages/.test(path))return demoJson({messages:demoMessages,has_more:false,next_before_id:null});
+    if(path.endsWith('/api/chat')){
+      const conv='demo-session',user='demo-user-'+Date.now(),assistant='demo-assistant-'+Date.now();
+      return Promise.resolve(demoSse([
+        `event: conversation\ndata: ${JSON.stringify({conversation_id:conv,user_message_id:user})}\n\n`,
+        `event: thinking\ndata: ${JSON.stringify({text:'检查演示状态。 '})}\n\n`,
+        `event: tool_use\ndata: ${JSON.stringify({id:'tool-'+Date.now(),name:'Read',input:{file_path:'demo-memory.json'}})}\n\n`,
+        `event: tool_result\ndata: ${JSON.stringify({tool_use_id:'tool-demo',content:'这是工具详情面板里的演示输出。',is_error:false})}\n\n`,
+        `event: delta\ndata: ${JSON.stringify({text:'收到演示回复。 '})}\n\n`,
+        `event: delta\ndata: ${JSON.stringify({text:'这个包是纯前端版本，所以回答来自模拟事件。'})}\n\n`,
+        `event: done\ndata: ${JSON.stringify({conversation_id:conv,session_id:'demo-session',assistant_message_id:assistant})}\n\n`
+      ]));
     }
-    if(path==='/api/diary')return json({entries:[{date:'2026-01-01',text:'示例日记：今天给对话留了一点空间。试着记住一条偏好，再看看它如何改变下一次开场。此内容为虚构演示。'}]});
-    if(path==='/api/thinking-summary')return json({summary:'匹配场景，读取本次演示上下文'});
-    if(path==='/api/tool-caption')return json({caption:'查看演示记忆与场景状态'});
-    if(path==='/api/upload')return json({detail:'公开演示不上传文件，请用文字体验。'},400);
-    if(path==='/api/sessions')return json({sessions:demoSessions});
-    const match=path.match(/^\/api\/sessions\/([^/]+)(?:\/(messages|star|title))?$/);
-    if(match){const id=decodeURIComponent(match[1]),s=demoSessions.find(s=>s.conv_id===id);
-      if(!s)return json({detail:'演示对话不存在'},404);
-      if(match[2]==='messages')return json({messages:new URL(String(url),location.href).searchParams.has('before_id')?[]:messages.get(id)||[],has_more:false,next_before_id:null});
-      if(method==='PATCH'){if(match[2]==='star')s.starred=!!body.starred;if(match[2]==='title')s.title=String(body.title||s.title);return json({ok:true});}
-      if(method==='DELETE'){demoSessions.splice(demoSessions.indexOf(s),1);messages.delete(id);contexts.delete(id);return json({ok:true});}
-    }
-    if(path==='/api/chat'){
-      let conv=body.conversation_id,s=demoSessions.find(s=>s.conv_id===conv);
-      if(!s){conv=uid();s={conv_id:conv,title:String(body.message||'演示对话').slice(0,40),starred:false,created_at:stamp(),updated_at:stamp()};demoSessions.unshift(s);messages.set(conv,[]);contexts.set(conv,{});}
-      const history=messages.get(conv),ctx=contexts.get(conv),text=String(body.message||'').slice(0,4000);
-      const checkpoint=body.edit_message_id||body.retry_message_id;
-      if(checkpoint){const at=history.findIndex(m=>m.id===checkpoint);if(at>=0){history.splice(at);for(const k of Object.keys(ctx))delete ctx[k];for(const m of history.filter(m=>m.role==='user')){if(/故事|便利店/.test(m.text)){ctx.topic='story';ctx.step=0;ctx.branch='';}else if(ctx.topic==='story'&&/^[abＡＢ]/i.test(m.text)){if(ctx.step===0)ctx.branch=/^[bＢ]/i.test(m.text)?'B':'A';ctx.step++;}}}}
-      const user=uid(),assistant=uid(),tool=uid();
-      if(!body.retry_message_id)history.push({id:user,role:'user',text,timestamp:stamp()});
-      let reply=answer(text,ctx);
-      if(body.model==='demo-fast'&&ctx.topic!=='story')reply=reply.split('\n\n').slice(0,2).join('\n\n')+'\n\n（Fast · 精简演示）';
-      if(body.model==='demo-codex')reply='**Builder · 结构化演示**\n\n'+reply;
-      const traces=[{type:'tool_use',id:tool,name:'Read',input:{source:'浏览器内演示状态',scene:ctx.topic||'intro'}},{type:'tool_result',tool_use_id:tool,content:JSON.stringify({simulation:true,scene:ctx.topic||'intro',savedMemories:demoProfile.savedMemories.filter(m=>m.enabled!==false).map(m=>m.content)},null,2),is_error:false}];
-      const events=[event('conversation',{conversation_id:conv,user_message_id:user}),event('tool_use',traces[0]),event('tool_result',traces[1])];
-      for(const chunk of reply.match(/[\s\S]{1,10}/g)||[])events.push(event('delta',{text:chunk}));
-      events.push(event('done',{conversation_id:conv,session_id:conv,assistant_message_id:assistant}));
-      return Promise.resolve(streamResponse(events,options.signal,()=>{history.push({id:assistant,role:'assistant',text:reply,traces,timestamp:stamp()});s.updated_at=stamp();}));
-    }
-    if(path.startsWith('/api/'))return json({detail:'此操作尚未包含在公开演示中。'},400);
     return realFetch(url,options);
   };
-  window.renderDemoWelcome=host=>{
-    const panel=document.createElement('div');panel.className='demo-welcome';
-    const note=document.createElement('p');note.textContent='Chatnest 交互演示 · 无需登录 · 本地脚本模拟';panel.append(note);
-    for(const [label,prompt] of [['记住一个小偏好','记住：我喜欢雨天，喝咖啡不加糖。'],['走进雨夜便利店','来一个雨夜便利店故事'],['看看产品怎么设计','介绍一下这个产品']]){
-      const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=()=>sendMessage(prompt);panel.append(button);
-    }
-    const hint=document.createElement('small');hint.textContent='可以自由输入。记忆和历史只在当前页面保留，刷新即可重新开始。';panel.append(hint);host.append(panel);
-  };
   state.token='demo-token';
+  localStorage.setItem('chat_token','demo-token');
 }
 
 if(state.token)showChat();resetEmpty();loadModels();updateSessionHeader();updateSendButton();
