@@ -1,5 +1,5 @@
 anthropic>=0.113.0,<1
-claude-agent-sdk==0.2.97
+claude-agent-sdk==0.2.121
 fastapi
 python-multipart
 python-dotenv
